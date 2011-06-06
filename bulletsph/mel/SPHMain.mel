@@ -1,0 +1,450 @@
+source utility.mel;
+
+//=================================================================================
+//                              GLOBAL VARIABLES                                  
+//=================================================================================
+global string $gSPHNodeType = "btSPHNode";
+global string $gSPHNodeInst = "btSPHNode1";
+global string $gSPHContextType = "btSPHContext";
+global string $gSPHContextInst = "btSPHContext1";
+global string $gSPHEmitterType = "btSPHEmitter";
+global string $gSPHEmitterInst = "btSPHEmitter1";
+global string $gSPHParticalName = "btSPHPartical1";
+global string $gSPHFieldType = "btSPHField";
+global string $gSPHFieldInst = "btSPHField1";
+global string $gSPHParAttrType = "btSPHParticleAttrMapper";
+global string $gSPHParAttrInst = "btSPHParticleAttrMapper1";
+global string $g_btSPHMainWindow;
+global string $g_btSPHMgrNodeType  = "btSPHMgrNode";
+global string $g_btSPHMgrNodeInst  = "btSPHMgrNode1";
+//=================================================================================
+//                               HELPER FUNCTION                               
+//=================================================================================
+proc LOG(string $log)
+{
+	u_log2("sph", $log);
+}
+proc WARN(string $log)
+{
+	u_warn2("sph", $log);
+}
+//=================================================================================
+//                               LOCAL  FUNCTION
+//=================================================================================
+proc initSPH( int $particleNum )
+{
+	LOG("BulletSPH_init("+$particleNum+")");
+	
+	btSPHCMD -particlecount $particleNum;
+}
+//--------------------------------------
+proc createWindow()
+{
+	LOG("createWindow()");
+
+	global string $g_btSPHMainWindow;	
+
+
+	//1.
+	$g_btSPHMainWindow = `window`;
+		columnLayout;
+ 			button -label "Debug"							-command "g_btSPH_CreateSPHNode";
+ 			button -label "Not Debug"						-command "g_btSPH_DeleteSPHNode";
+ 			button -label "To Maya Coordination"			-command "g_btSPH_toMayaCoordination";
+// 			button -label "create SPH emitter"				-command "g_btSPH_CreateSPHEmitter";
+// 			button -label "create field"					-command "g_btSPH_CreateField";
+
+//			button -label "create SPH ParticlesNoEmitter"	-command "g_btSPH_CreateParticles";
+			button -label "create Obstacle and Init Boxes"	-command "g_btSPH_CreateBoxes";
+			button -label "create SPH ParticlesWithEmitter" -command "g_btSPH_CreateParticlesWithEmitter";
+//			button -label "initilize SPH"					-command "g_btSPH_InitSPH";
+			button -label "simulate 1 - 100"				-command "g_btSPH_Simulate";
+			button -label "export cache 1 - 100"			-command "g_btSPH_ExportCache";
+			button -label "import cache "					-command "g_btSPH_ImportCache";
+	
+			//
+	showWindow;
+}
+//--------------------------------------
+proc destroyWindow()
+{
+	LOG("destroyWindow()");
+
+	global string $g_btSPHMainWindow;	
+
+	//hide $g_btSPHMainWindow
+	toggleWindowVisibility $g_btSPHMainWindow;//window -visible $g_btSPHMainWindow;
+}
+//--------------------------------------
+proc setCacheDirectory()
+{
+
+	//1.select the active dynGlobals node.
+	string $fdynGlobals = `itemFilter -byType dynGlobals`;
+	string $dynGlobals[] = `lsThroughFilter $fdynGlobals`;
+	string $dynGlobalsActive;
+	if( `size($dynGlobals)`>1 ){
+		WARN("dynGlobals has "+size($dynGlobals)+"node(s). Delete the used dynGlobals node(s), then try again.");
+		return;
+	}else if( `size($dynGlobals)`==1 ){
+		$dynGlobalsActive = $dynGlobals[0];
+		WARN("dynGlobals already exist : "+$dynGlobalsActive);
+	}else {
+		$dynGlobalsActive = `createNode dynGlobals`;
+		setAttr ($dynGlobalsActive+".useParticleDiskCache") 1;
+		LOG("createNode dynGlobals : "+ $dynGlobalsActive);
+	}
+	//2.check and set the cache dir
+	string $cachedir = `getAttr ($dynGlobalsActive+".cacheDirectory")`;
+	if( `size($cachedir)`==0 ){// cache dirctory is empty
+		// chech and get new cache directory
+		string $scenename=`file -q -shortName -sceneName`;
+		if( `size($scenename)`!=0 ){
+			$cachedir = basenameEx( `file -q -shortName -sceneName` );
+		}else{//unsaved scene
+			$cachedir = "untitled";
+		}
+		// set new cache directory
+		setAttr -type "string" ($dynGlobalsActive+".cacheDirectory") $cachedir;
+	}
+	LOG("cache directory is : "+$cachedir);
+}
+proc createMgrNode()
+{
+	LOG("createMgrNode()");//
+
+	global string $g_btSPHMgrNodeType ;
+	global string $g_btSPHMgrNodeInst;
+
+
+	$gSPHParAttrInst = u_getSingletonNode2($g_btSPHMgrNodeType, $g_btSPHMgrNodeInst);
+}
+proc int getParticleCount()
+{
+	LOG("getParticleCount()");//
+
+	global string $g_btSPHMgrNodeInst;
+
+	return `getAttr ($g_btSPHMgrNodeInst+".particleCount")`;
+}
+//=================================================================================
+//                              GLOBAL FUNCTION 
+//=================================================================================
+// Main Entry ---------------------------
+global proc g_btSPH_Start()
+{
+	LOG("g_btSPH_Start()");//
+
+	//1.
+	playbackOptions -e -min 0.00 -max 10000.0;
+    currentTime -e 0;
+
+	//2.
+	createMgrNode();
+
+	//3.
+	createWindow();
+
+
+}
+// Main Exit ---------------------------
+global proc g_btSPH_End()
+{
+	LOG("g_btSPH_End()");
+	
+	//1.
+	destroyWindow();
+}
+//--------------------------------------
+global proc g_btSPH_CreateBoxes()
+{
+	LOG("g_btSPH_CreateParticles()");
+	global string $g_btSPHMgrNodeInst;
+
+	//create obstacle box and init box, and connect to Mgr Node
+	string $oboxname = g_btSPH_getObstacleBoxName();//obstacle box
+	LOG("polyCube -ch on -o on -w 10.0 -h 10.0 -d 10.0 -cuv 4 -name "+$oboxname);
+	string $obox[]=`polyCube -ch on -o on -w 10.0 -h 10.0 -d 10.0 -cuv 4 -name $oboxname`;
+	string $oboxshape[] = u_getShapes($obox[0]);
+	connectAttr ($oboxshape[0]+".outMesh")  ($g_btSPHMgrNodeInst+".obox");
+	
+	string $iboxname = g_btSPH_getInitBoxName();//init box
+	LOG("polyCube -ch on -o on -w 3.0 -h 3.0 -d 3.0 -cuv 4 -name "+$iboxname);
+	string $ibox[]=`polyCube -ch on -o on -w 3.0 -h 3.0 -d 3.0 -cuv 4 -name $iboxname`;
+	string $iboxshape[] = u_getShapes($ibox[0]);
+	connectAttr ($iboxshape[0]+".outMesh")  ($g_btSPHMgrNodeInst+".ibox");
+}
+//--------------------------------------
+global proc g_btSPH_CreateParticles()
+{
+	LOG("g_btSPH_CreateParticles()");
+
+	global string $gSPHParAttrType;
+	global string $gSPHParAttrInst;
+	global string $gSPHParticalName;
+
+		
+	int $particleCount = getParticleCount();
+
+ 	// init sph system	
+ 	BulletSPH_init($particleCount);
+
+
+	//generate particles
+	float $maxRadius = $particleCount / 10.0;// max radius
+	string $p[] = `particle -jbp 0.0 0.0 0.0 -nj $particleCount -jr $maxRadius -c 1 -name ($gSPHParticalName)`;
+	string $particleShape = $p[1];
+	
+	//set particles attributes
+	setAttr ($particleShape+".particleRenderType") 3;//3 - render as points
+
+	//Note: if lifespanMode is 1, the particles will disappear after several farmes.
+	setAttr ($particleShape+".lifespanMode") 0;//0 - live forever, 1 - constant.
+	setAttr ($particleShape+".maxCount") -1;//$particleCount;
+
+	//create btSPHParticleAttrMapper
+	$gSPHParAttrInst = u_getSingletonNode2($gSPHParAttrType, $gSPHParAttrInst);
+	//set btSPHParticleAttrMapper.count = $particleCount
+	setAttr ($gSPHParAttrInst+".particleCount") $particleCount;
+		
+	//btSPHParticleAttrMapper.outPosition --> particle.rampPosition
+	connectAttr ($gSPHParAttrInst+".outPosition") ($particleShape+".rampPosition");
+	//connectAttr ($gSPHParAttrInst+".outPosition") ($particleShape+".position");
+	connectAttr ("time1.outTime") ($gSPHParAttrInst+".time");
+	
+	if(1/*useOutTime*/){
+		//dummy objec for update $gSPHParAttrInst
+		string $cube[]=`polyCube -ch on -o on -cuv 4`; 
+		setAttr ($cube[0]+".translateX") 99999;//make it out of the view
+		connectAttr ($gSPHParAttrInst+".oTime") ($cube[0]+".rotateX");
+
+		//active, or $gSPHParAttrInst will not update, very strange.
+		setAttr ($gSPHParAttrInst+".oTime") 3;
+	}
+}
+//--------------------------------------
+global proc g_btSPH_CreateParticlesWithEmitter()
+{
+	LOG("g_btSPH_CreateParticlesWithEmitter()");
+
+	global string $gSPHParAttrType;
+	global string $gSPHParAttrInst;
+	global string $gSPHParticalName;
+	global string $g_btSPHMgrNodeInst;
+
+	int $particleCount = getParticleCount();
+
+	initSPH($particleCount);
+
+	//create emitter
+	string $e[] = `emitter -pos 0 0 0 -type omni -r 100 -sro 0 -nuv 0 -cye none -cyi 1 -spd 1 -srn 0 -nsp 1 -tsp 0 -mxd 0 -mnd 0 -dx 1 -dy 0 -dz 0 -sp 0` ;
+	string $emitter = $e[0];
+	//create particles
+	string $p[] = `particle -name ($gSPHParticalName)`;
+	string $particleShape = $p[1];
+	//set emitter attributes
+	connectDynamic -em $emitter $particleShape;
+	setAttr ($emitter+".speed") 2.5;
+	//set particles attributes
+	setAttr ($particleShape+".particleRenderType") 3;//3 - render as points
+	setAttr ($particleShape+".maxCount") $particleCount;
+	//connect to Mgr node
+	connectAttr ($particleShape+".count") ($g_btSPHMgrNodeInst+".particleShape");
+
+	//create btSPHParticleAttrMapper
+	$gSPHParAttrInst = u_getSingletonNode2($gSPHParAttrType, $gSPHParAttrInst);
+	//set btSPHParticleAttrMapper.count = $particleCount
+	setAttr ($gSPHParAttrInst+".particleCount") $particleCount;
+	//connect to Mgr node
+	//connectAttr ($gSPHParAttrInst+".dummy") ($g_btSPHMgrNodeInst+".particlePPAttr");
+		
+	//btSPHParticleAttrMapper.outPosition --> particle.rampPosition
+	connectAttr ($gSPHParAttrInst+".outPosition") ($particleShape+".rampPosition");
+	connectAttr -f ($g_btSPHMgrNodeInst+".particleCount") ($gSPHParAttrInst+".particleCount");	
+	connectAttr ("time1.outTime") ($gSPHParAttrInst+".time");
+
+
+
+	
+	if(1/*useOutTime*/){
+		//dummy objec for update $gSPHParAttrInst
+		string $cube[]=`polyCube -ch on -o on -cuv 4`; 
+		setAttr ($cube[0]+".translateX") 99999;//make it out of the view
+		connectAttr ($gSPHParAttrInst+".oTime") ($cube[0]+".rotateX");
+
+		//active, or $gSPHParAttrInst will not update, very strange.
+		setAttr ($gSPHParAttrInst+".oTime") 3;
+	}
+
+ 	// init sph system	
+ 	//initSPH($particleCount);
+
+	//
+	g_btSPH_toMayaCoordination();
+}
+//--------------------------------------
+global proc g_btSPH_InitSPH()
+{
+	LOG("g_btSPH_InitSPH()");
+	
+	int $particleCount = getParticleCount();
+
+
+	initSPH($particleCount);
+}
+//--------------------------------------
+global proc g_btSPH_Simulate()
+{
+	LOG("g_btSPH_Simulate()");
+	
+	global string $gSPHParticalName;
+
+	btSPHCMD -framerange 1 100 -particleName ($gSPHParticalName);
+}
+//--------------------------------------
+global proc g_btSPH_ExportCache()
+{
+	LOG("g_btSPH_ExportCache()");
+
+	global string $gSPHParticalName;
+
+	//-- set cache dir
+	setCacheDirectory();
+
+
+	//- export
+	btSPHCMD -framerange 1 100 -cache -particleName ($gSPHParticalName);
+	//btSPHCMD -framerange 1 100 -cache;
+
+}
+//--------------------------------------
+global proc g_btSPH_ImportCache()
+{
+	LOG("g_btSPH_ImportCache()");
+
+	global string $gSPHParticalName;
+
+	string $p[] = `particle -name ($gSPHParticalName)`;
+
+	setCacheDirectory();
+	WARN("Please set the dynGlobals*.maxFrameCached/.minFrameCached manual.");
+}
+//--------------------------------------
+global proc g_btSPH_CreateSPHNode()
+{
+	LOG("g_btSPH_CreateSPHNode()");
+		
+	global string $gSPHNodeType;
+	global string $gSPHNodeInst;
+
+
+	if(`objExists $gSPHNodeInst`==0)
+	{
+		createNode -name $gSPHNodeInst $gSPHNodeType;
+	}
+}
+//--------------------------------------
+global proc g_btSPH_DeleteSPHNode()
+{
+	LOG("g_btSPH_DeleteSPHNode()");
+
+	global string $gSPHNodeInst;
+
+
+	if(`objExists $gSPHNodeInst`==1)
+	{
+		delete $gSPHNodeInst;
+	}
+}
+//--------------------------------------
+global proc g_btSPH_toMayaCoordination()
+{
+	LOG("g_btSPH_toMayaCoordination()");
+
+	global string $gSPHNodeInst;
+	global string $gSPHParticalName;
+
+
+	if(`objExists $gSPHNodeInst`){
+		rotate -a -x -90 0 0 $gSPHNodeInst;
+	}
+	if(`objExists $gSPHParticalName`){
+		rotate -a -x -90 0 0 $gSPHParticalName;
+	}
+
+}
+//--------------------------------------
+global proc g_btSPH_CreateSPHEmitter()
+{
+	LOG("g_btSPH_CreateSPHEmitter()");
+		
+	global string $gSPHEmitterType;
+	global string $gSPHEmitterInst;
+	global string $gSPHParticalName;
+
+
+	if(`objExists $gSPHEmitterInst`==0)
+	{
+		createNode -name $gSPHEmitterInst $gSPHEmitterType;
+
+		particle -name $gSPHParticalName ;
+		connectDynamic -em $gSPHEmitterType $gSPHParticalName;
+		setAttr ($gSPHEmitterInst+".rate") 200;
+		setAttr ($gSPHEmitterInst+".speed") 25;
+	}
+}
+//--------------------------------------
+global proc g_btSPH_CreateField()
+{
+	LOG("g_btSPH_CreateField()");
+		
+	global string $gSPHFieldType;
+	global string $gSPHFieldInst;
+	global string $gSPHParticalName;
+	global string $gSPHFieldType;
+	global string $gSPHFieldInst;
+
+
+	$gSPHFieldInst = u_getSingletonNode2($gSPHFieldType, $gSPHFieldInst);
+	
+	$particleNum = 128;
+	// create particle object.
+	particle -jitterBasePoint 0.0 0.0 0.0 -numJitters $particleNum 
+		-jitterRadius 5 -cache 1 -name $gSPHParticalName ;
+
+	// connect  field node with the particle object.
+	connectDynamic -f $gSPHFieldInst $gSPHParticalName ;
+	setAttr ($gSPHFieldInst+".attractDistance") 10;
+	setAttr ($gSPHFieldInst+".repelDistance") 5;
+//	$particleshape = u_getShape($gSPHParticalName);
+//	setAttr($particleshape+".maxCount") $particleNum;
+
+	//set particle number
+	setAttr ($gSPHFieldInst+".particleNum") $particleNum;
+	// connect time to field node
+// 	if(`isConnected time1.outTime    ($gSPHFieldInst+".inTime")`==0){
+// 		connectAttr time1.outTime    ($gSPHFieldInst+".inTime");
+// 	}
+
+
+}
+//--------------------------------------
+global proc string  g_btSPH_getObstacleBoxName()
+{
+	LOG("g_btSPH_getObstacleBoxName()");
+
+	global string $gSPHParticalName;
+
+
+	return ($gSPHParticalName+"_obox");
+}
+//--------------------------------------
+global proc string g_btSPH_getInitBoxName()
+{	
+	LOG("g_btSPH_getInitBoxName()");
+
+	global string $gSPHParticalName;
+
+
+	return ($gSPHParticalName+"_ibox");
+}

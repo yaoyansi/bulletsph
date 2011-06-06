@@ -1,0 +1,14 @@
+global proc AEbtSPHMgrNodeTemplate( string $nodeName )
+{
+	editorTemplate -beginScrollLayout;
+
+		editorTemplate -beginLayout "Attributes" -collapse 0;
+			editorTemplate -addControl "i_particleCount";
+		editorTemplate -endLayout;
+
+		// include/call base class/node attributes
+		AEdependNodeTemplate $nodeName;
+		editorTemplate -addExtraControls;
+
+	editorTemplate -endScrollLayout;
+}
