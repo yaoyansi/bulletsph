@@ -1,4 +1,14 @@
 //--------------------------
+Contents
+//--------------------------
+-Dependences
+-Build on Win7(x32) with MSVC2008
+-Install
+-How to use this plugin
+-Reopen the file (or open \test\btsphtest.ma)
+-Demo
+
+//--------------------------
 Dependences
 //--------------------------
 -bullet2.78 (http://code.google.com/p/bullet/downloads/list)
@@ -68,3 +78,10 @@ Reopen the file (or open \test\btsphtest.ma)
 (If you don't execute this mel cmd, maya will crash when you play the animation, 
 because btSPH is not initilized.)
 -.playe the animation.
+
+
+//--------------------------
+Demo
+//--------------------------
+And here is the demo https://github.com/yaoyansi/bulletsph/blob/master/bulletsph/test/bulletsph.avi.7z
+save the url file to your local directory and unzip it.
