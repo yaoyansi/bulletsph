@@ -1,12 +1,19 @@
 //--------------------------
 Contents
 //--------------------------
+-License
 -Dependences
 -Build on Win7(x32) with MSVC2008
 -Install
 -How to use this plugin
 -Reopen the file (or open \test\btsphtest.ma)
 -Demo
+
+//--------------------------
+License
+//--------------------------
+This software is under GPL license.
+You can contact the author by email: yaoyansi2@yahoo.com.cn
 
 //--------------------------
 Dependences
