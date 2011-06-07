@@ -7,7 +7,7 @@
 // #include "BasicHwShader.h"
 // #include "BasicHwShaderBehavior.h"
 // #include "ownerEmitter.h"
-#include "btSPHContext.h"
+//#include "btSPHContext.h"
 #include "btSPHNode.h"
 #include "simpleFluidEmitter.h"
 //#include "torusField.h"
